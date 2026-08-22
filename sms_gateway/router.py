@@ -4,6 +4,7 @@ import logging
 from sms_gateway.base import SMSGateway
 from sms_gateway.config import GatewayConfig
 from sms_gateway.models import MessageStatus, ProviderName, SendResult
+from sms_gateway.providers.fast2sms import Fast2SMSProvider
 from sms_gateway.providers.msg91 import MSG91Provider
 from sms_gateway.providers.telnyx import TelnyxProvider
 
@@ -17,9 +18,11 @@ class SMSRouter:
         self.config = config or GatewayConfig()
         self.telnyx = TelnyxProvider(self.config.telnyx)
         self.msg91 = MSG91Provider(self.config.msg91)
+        self.fast2sms = Fast2SMSProvider(self.config.fast2sms)
         self._providers: dict[str, SMSGateway] = {
             "telnyx": self.telnyx,
             "msg91": self.msg91,
+            "fast2sms": self.fast2sms,
         }
 
     @property
@@ -34,6 +37,8 @@ class SMSRouter:
             return self.telnyx
         if mode == "msg91":
             return self.msg91
+        if mode == "fast2sms":
+            return self.fast2sms
         if mode == "fallback":
             primary = self.config.fallback_primary
             return self._providers.get(primary, self.telnyx)
@@ -72,7 +77,11 @@ class SMSRouter:
     async def _send_with_fallback(self, to: str, body: str) -> SendResult:
         """Try primary provider; if it fails, try the secondary."""
         primary_name = self.config.fallback_primary
-        secondary_name = "msg91" if primary_name == "telnyx" else "telnyx"
+        secondary_name = {
+            "telnyx": "msg91",
+            "msg91": "telnyx",
+            "fast2sms": "msg91",
+        }.get(primary_name, "msg91")
 
         primary = self._providers[primary_name]
         result = await primary.send_sms(to, body)

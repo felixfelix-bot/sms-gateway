@@ -3,6 +3,7 @@
 A provider-agnostic SMS gateway built for the **Auroville election system** (auditable-voting project). It sends OTPs and ballot links to voter phone numbers using the optimal provider based on destination:
 
 - **India (+91)** → **MSG91** (TRAI/DLT-compliant domestic routing)
+- **India (+91)** → **Fast2SMS** (alternative domestic provider, quick or DLT route)
 - **International** → **Telnyx** (global reach, competitive pricing)
 
 ## Architecture Overview
@@ -13,16 +14,16 @@ A provider-agnostic SMS gateway built for the **Auroville election system** (aud
                     │   /sms/send  /sms/batch  /health  │
                     └──────────────┬──────────────────┘
                                    │
-                          ┌────────▼────────┐
-                          │    SMSRouter     │
-                          │  (auto-routing)  │
-                          └───┬─────────┬───┘
-                              │         │
-                   ┌──────────▼──┐  ┌───▼──────────┐
-                   │  Telnyx     │  │   MSG91       │
-                   │  Adapter    │  │   Adapter     │
-                   │ (intl SMS)  │  │ (India SMS)   │
-                   └─────────────┘  └───────────────┘
+                          ┌────────▼───────────┐
+                          │     SMSRouter      │
+                          │   (auto-routing)   │
+                          └──┬─────────┬─────┬──┘
+                             │         │     │
+                  ┌──────────▼──┐ ┌────▼──┐ ┌▼─────────────┐
+                  │    Telnyx   │ │ MSG91 │ │   Fast2SMS   │
+                  │   Adapter   │ │Adapter│ │   Adapter    │
+                  │ (intl SMS)  │ │(India)│ │   (India)    │
+                  └─────────────┘ └───────┘ └──────────────┘
 ```
 
 ### Key Components
@@ -33,6 +34,7 @@ A provider-agnostic SMS gateway built for the **Auroville election system** (aud
 | Models | `sms_gateway/models.py` | Pydantic request/response models |
 | Telnyx adapter | `sms_gateway/providers/telnyx.py` | Telnyx REST API integration |
 | MSG91 adapter | `sms_gateway/providers/msg91.py` | MSG91 REST API integration |
+| Fast2SMS adapter | `sms_gateway/providers/fast2sms.py` | Fast2SMS REST API integration |
 | Auto-router | `sms_gateway/router.py` | Number-prefix routing + fallback logic |
 | Rate limiter | `sms_gateway/rate_limiter.py` | Token bucket per provider |
 | FastAPI app | `sms_gateway/app.py` | HTTP endpoints with Bearer auth |
@@ -46,6 +48,7 @@ A provider-agnostic SMS gateway built for the **Auroville election system** (aud
 - Python 3.12+
 - A Telnyx account with API key and messaging profile
 - An MSG91 account with auth key (for India SMS)
+- A Fast2SMS account with API key (alternative India provider)
 
 ### Quick Start
 
@@ -84,7 +87,7 @@ The API will be available at `http://localhost:8000` with interactive docs at `/
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `SMS_GATEWAY_TOKEN` | ✅ | `changeme` | Bearer token for API authentication |
-| `SMS_ROUTING_MODE` | ❌ | `auto` | Routing mode: `auto`, `telnyx`, `msg91`, `fallback` |
+| `SMS_ROUTING_MODE` | ❌ | `auto` | Routing mode: `auto`, `telnyx`, `msg91`, `fast2sms`, `fallback` |
 | `SMS_FALLBACK_PRIMARY` | ❌ | `telnyx` | Primary provider in fallback mode |
 | `SMS_GATEWAY_HOST` | ❌ | `0.0.0.0` | Server bind host |
 | `SMS_GATEWAY_PORT` | ❌ | `8000` | Server bind port |
@@ -96,6 +99,11 @@ The API will be available at `http://localhost:8000` with interactive docs at `/
 | `MSG91_SENDER_ID` | ❌ | `AUROVL` | MSG91 sender ID (6-char alpha) |
 | `MSG91_DLT_TEMPLATE_ID` | ✅* | — | DLT template ID (India TRAI compliance) |
 | `MSG91_RATE_LIMIT` | ❌ | `10.0` | MSG91 requests/second limit |
+| `FAST2SMS_API_KEY` | ✅* | — | Fast2SMS API key (`authorization` header) |
+| `FAST2SMS_SENDER_ID` | ❌ | `FSTSMS` | DLT-approved sender ID (DLT route only) |
+| `FAST2SMS_ROUTE` | ❌ | `q` | Fast2SMS route: `q` (quick) or `dlt` |
+| `FAST2SMS_DLT_TEMPLATE_ID` | ✅* | — | DLT template ID (required when route is `dlt`) |
+| `FAST2SMS_RATE_LIMIT` | ❌ | `10.0` | Fast2SMS requests/second limit |
 
 \* Required only if that provider is used by the routing mode.
 
@@ -174,7 +182,8 @@ curl http://localhost:8000/health
   "status": "healthy",
   "providers": {
     "telnyx": {"provider": "telnyx", "healthy": true, "latency_ms": 45.2},
-    "msg91": {"provider": "msg91", "healthy": true, "latency_ms": 120.5}
+    "msg91": {"provider": "msg91", "healthy": true, "latency_ms": 120.5},
+    "fast2sms": {"provider": "fast2sms", "healthy": true, "latency_ms": 98.3}
   }
 }
 ```
@@ -188,16 +197,16 @@ curl http://localhost:8000/balance \
 
 ## Provider Comparison
 
-| Feature | Telnyx | MSG91 |
-|---|---|---|
-| Coverage | International (global) | India domestic |
-| API Auth | Bearer token | Auth key header |
-| Compliance | Standard telecom regs | TRAI/DLT compliant |
-| Delivery callbacks | Webhook support | Polling + webhook |
-| Pricing model | Per-message (USD) | Per-SMS credits (INR) |
-| Rate limits | High (enterprise) | Moderate |
-| Best for | International voters | Indian voters (+91) |
-| Sender ID | Dynamic (number-based) | Fixed 6-char alpha |
+| Feature | Telnyx | MSG91 | Fast2SMS |
+|---|---|---|---|
+| Coverage | International (global) | India domestic | India domestic |
+| API Auth | Bearer token | Auth key header | API key header |
+| Compliance | Standard telecom regs | TRAI/DLT compliant | TRAI/DLT compliant |
+| Delivery callbacks | Webhook support | Polling + webhook | Polling only |
+| Pricing model | Per-message (USD) | Per-SMS credits (INR) | Wallet credits (INR) |
+| Rate limits | High (enterprise) | Moderate | Moderate |
+| Best for | International voters | Indian voters (+91) | Indian voters (+91) |
+| Sender ID | Dynamic (number-based) | Fixed 6-char alpha | DLT-approved 3-6 char |
 
 ## Routing Modes
 
@@ -206,14 +215,15 @@ curl http://localhost:8000/balance \
 | `auto` (default) | +91 → MSG91, everything else → Telnyx |
 | `telnyx` | All messages via Telnyx |
 | `msg91` | All messages via MSG91 |
-| `fallback` | Try primary (default: Telnyx), if fails try secondary (MSG91) |
+| `fast2sms` | All messages via Fast2SMS |
+| `fallback` | Try primary (default: Telnyx), if fails try secondary (`telnyx`↔`msg91`, `fast2sms`→`msg91`) |
 
 ## India-Specific Notes (TRAI/DLT Compliance)
 
 India's TRAI (Telecom Regulatory Authority of India) mandates that all commercial SMS traffic must be registered under the **Distributed Ledger Technology (DLT)** platform. Key requirements:
 
 1. **Sender ID Registration**: The 6-character sender ID (e.g., `AUROVL`) must be pre-approved on a DLT platform.
-2. **Template Registration**: Every message template must be registered and approved. The `MSG91_DLT_TEMPLATE_ID` env var references this approved template.
+2. **Template Registration**: Every message template must be registered and approved. The `MSG91_DLT_TEMPLATE_ID` / `FAST2SMS_DLT_TEMPLATE_ID` env vars reference this approved template. On Fast2SMS, templates and sender IDs are managed in the DLT MANAGER section of the dashboard.
 3. **Content Matching**: The SMS body must match the registered template. Variable substitutions (like OTP values) are allowed within registered placeholder positions.
 4. **Transactional Route**: Election OTPs qualify as transactional SMS (route `4`), which has higher delivery priority than promotional SMS.
 5. **Scrubbing**: MSG91 handles TRAI scrubbing internally, but the template ID must be valid to avoid message rejection.
@@ -246,7 +256,8 @@ sms-gateway/
 │   ├── providers/
 │   │   ├── __init__.py
 │   │   ├── telnyx.py      # Telnyx adapter
-│   │   └── msg91.py       # MSG91 adapter
+│   │   ├── msg91.py       # MSG91 adapter
+│   │   └── fast2sms.py    # Fast2SMS adapter
 │   ├── router.py          # Auto-routing logic
 │   ├── app.py             # FastAPI HTTP service
 │   ├── rate_limiter.py    # Token bucket rate limiter
@@ -255,6 +266,7 @@ sms-gateway/
 │   ├── test_router.py     # Routing logic tests
 │   ├── test_telnyx.py     # Telnyx adapter tests
 │   ├── test_msg91.py      # MSG91 adapter tests
+│   ├── test_fast2sms.py   # Fast2SMS adapter tests
 │   ├── test_app.py        # API endpoint tests
 │   └── test_rate_limiter.py
 ├── Dockerfile

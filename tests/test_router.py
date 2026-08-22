@@ -13,6 +13,7 @@ os.environ.setdefault("MSG91_DLT_TEMPLATE_ID", "test-dlt")
 
 from sms_gateway.config import GatewayConfig, MSG91Config, TelnyxConfig
 from sms_gateway.models import ProviderName
+from sms_gateway.providers.fast2sms import Fast2SMSProvider
 from sms_gateway.providers.msg91 import MSG91Provider
 from sms_gateway.providers.telnyx import TelnyxProvider
 from sms_gateway.router import SMSRouter
@@ -63,6 +64,59 @@ class TestExplicitRouting:
         router = SMSRouter(config)
         provider = router.route("+15551234567")
         assert isinstance(provider, MSG91Provider)
+
+
+class TestFast2SMSRouting:
+    """Test Fast2SMS routing mode and fallback integration."""
+
+    def test_fast2sms_mode_always_fast2sms(self, monkeypatch):
+        monkeypatch.setenv("SMS_ROUTING_MODE", "fast2sms")
+        config = GatewayConfig()
+        router = SMSRouter(config)
+        provider = router.route("+15551234567")
+        assert isinstance(provider, Fast2SMSProvider)
+
+    def test_fast2sms_registered_as_provider(self):
+        router = SMSRouter()
+        assert "fast2sms" in router._providers
+        assert router._providers["fast2sms"] is router.fast2sms
+
+    @pytest.mark.asyncio
+    async def test_fallback_from_fast2sms_to_msg91(self, monkeypatch):
+        monkeypatch.setenv("SMS_ROUTING_MODE", "fallback")
+        monkeypatch.setenv("SMS_FALLBACK_PRIMARY", "fast2sms")
+        config = GatewayConfig()
+        router = SMSRouter(config)
+
+        from unittest.mock import AsyncMock
+        from sms_gateway.models import MessageStatus, SendResult
+
+        # Primary (fast2sms) fails
+        fail_result = SendResult(
+            message_id="",
+            provider=ProviderName.fast2sms,
+            status=MessageStatus.failed,
+            error="Insufficient wallet balance",
+            to="+919876543210",
+            body="test",
+        )
+        router.fast2sms.send_sms = AsyncMock(return_value=fail_result)
+
+        # Secondary (msg91) succeeds
+        success_result = SendResult(
+            message_id="msg91-id",
+            provider=ProviderName.msg91,
+            status=MessageStatus.sent,
+            to="+919876543210",
+            body="test",
+        )
+        router.msg91.send_sms = AsyncMock(return_value=success_result)
+
+        result = await router.send("+919876543210", "test message")
+        assert result.status == MessageStatus.sent
+        assert result.provider == ProviderName.msg91
+        router.fast2sms.send_sms.assert_called_once()
+        router.msg91.send_sms.assert_called_once()
 
 
 class TestFallbackRouting:

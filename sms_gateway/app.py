@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="SMS Gateway",
-    description="Provider-agnostic SMS gateway supporting Telnyx (international) and MSG91 (India domestic).",
+    description="Provider-agnostic SMS gateway supporting Telnyx (international), MSG91 (India domestic) and Fast2SMS (India domestic).",
     version="0.1.0",
 )
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -121,23 +121,21 @@ async def health(
     router: SMSRouter = Depends(get_router),
 ):
     """Gateway + all providers health check (no auth required)."""
-    telnyx_health = await router.telnyx.health_check()
-    msg91_health = await router.msg91.health_check()
-    all_healthy = telnyx_health.healthy and msg91_health.healthy
-    any_healthy = telnyx_health.healthy or msg91_health.healthy
+    providers: dict[str, dict] = {}
+    all_healthy = True
+    any_healthy = False
+    for name, provider in router._providers.items():
+        health_status = await provider.health_check()
+        providers[name] = health_status.model_dump()
+        all_healthy = all_healthy and health_status.healthy
+        any_healthy = any_healthy or health_status.healthy
     if all_healthy:
         status_str = "healthy"
     elif any_healthy:
         status_str = "degraded"
     else:
         status_str = "unhealthy"
-    return {
-        "status": status_str,
-        "providers": {
-            "telnyx": telnyx_health.model_dump(),
-            "msg91": msg91_health.model_dump(),
-        },
-    }
+    return {"status": status_str, "providers": providers}
 
 
 @app.get("/balance")
@@ -146,14 +144,11 @@ async def balance(
     _: str = Security(verify_token, scopes=[]),
 ):
     """Get balance/credits for all providers."""
-    telnyx_balance = await router.telnyx.get_balance()
-    msg91_balance = await router.msg91.get_balance()
-    return {
-        "providers": {
-            "telnyx": telnyx_balance.model_dump(),
-            "msg91": msg91_balance.model_dump(),
-        }
-    }
+    providers: dict[str, dict] = {}
+    for name, provider in router._providers.items():
+        balance_info = await provider.get_balance()
+        providers[name] = balance_info.model_dump()
+    return {"providers": providers}
 
 
 @app.get("/")

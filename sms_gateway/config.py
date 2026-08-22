@@ -40,12 +40,30 @@ class MSG91Config:
 
 
 @dataclass
+class Fast2SMSConfig:
+    api_key: str = field(default_factory=lambda: os.getenv("FAST2SMS_API_KEY", ""))
+    sender_id: str = field(
+        default_factory=lambda: os.getenv("FAST2SMS_SENDER_ID", "FSTSMS")
+    )
+    route: str = field(default_factory=lambda: os.getenv("FAST2SMS_ROUTE", "q"))
+    dlt_template_id: str = field(
+        default_factory=lambda: os.getenv("FAST2SMS_DLT_TEMPLATE_ID", "")
+    )
+    base_url: str = field(
+        default_factory=lambda: os.getenv("FAST2SMS_BASE_URL", "https://www.fast2sms.com")
+    )
+    rate_limit: float = field(
+        default_factory=lambda: float(os.getenv("FAST2SMS_RATE_LIMIT", "10.0"))
+    )
+
+
+@dataclass
 class GatewayConfig:
     # Gateway auth
     gateway_token: str = field(
         default_factory=lambda: os.getenv("SMS_GATEWAY_TOKEN", "changeme")
     )
-    # Routing: auto | telnyx | msg91 | fallback
+    # Routing: auto | telnyx | msg91 | fast2sms | fallback
     routing_mode: str = field(
         default_factory=lambda: os.getenv("SMS_ROUTING_MODE", "auto")
     )
@@ -59,6 +77,7 @@ class GatewayConfig:
     # Sub-configs
     telnyx: TelnyxConfig = field(default_factory=TelnyxConfig)
     msg91: MSG91Config = field(default_factory=MSG91Config)
+    fast2sms: Fast2SMSConfig = field(default_factory=Fast2SMSConfig)
 
 
 def get_config() -> GatewayConfig:

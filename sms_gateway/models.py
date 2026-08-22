@@ -19,6 +19,7 @@ class MessageStatus(str, Enum):
 class ProviderName(str, Enum):
     telnyx = "telnyx"
     msg91 = "msg91"
+    fast2sms = "fast2sms"
 
 
 # ── Internal data structures ───────────────────────────────────────────

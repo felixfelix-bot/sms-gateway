@@ -35,12 +35,24 @@ def test_router():
     # Mock provider methods
     router.telnyx.send_sms = AsyncMock()
     router.msg91.send_sms = AsyncMock()
+    router.fast2sms.send_sms = AsyncMock()
     router.telnyx.health_check = AsyncMock()
     router.msg91.health_check = AsyncMock()
+    router.fast2sms.health_check = AsyncMock(
+        return_value=HealthStatus(
+            provider=ProviderName.fast2sms, healthy=True, latency_ms=12.0
+        )
+    )
     router.telnyx.get_balance = AsyncMock()
     router.msg91.get_balance = AsyncMock()
+    router.fast2sms.get_balance = AsyncMock(
+        return_value=BalanceInfo(
+            provider=ProviderName.fast2sms, balance=100.0, currency="INR"
+        )
+    )
     router.telnyx.check_delivery = AsyncMock()
     router.msg91.check_delivery = AsyncMock()
+    router.fast2sms.check_delivery = AsyncMock()
     return router
 
 
