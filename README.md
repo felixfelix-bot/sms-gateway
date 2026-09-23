@@ -107,6 +107,38 @@ The API will be available at `http://localhost:8000` with interactive docs at `/
 
 \* Required only if that provider is used by the routing mode.
 
+### Telnyx account provisioning
+
+`scripts/provision_telnyx.py` is idempotent and **dry-run by default** — it reads
+the balance, ensures a messaging profile exists, and ensures an SMS-capable
+number is owned and attached to that profile. A number is only bought when the
+account is funded *and* `--execute` is passed, so it is safe to run from an
+agent session.
+
+```bash
+# plan only — prints the balance, the profile it would use and the number it would buy
+python -m scripts.provision_telnyx
+
+# buy a number and attach it (requires a funded account)
+python -m scripts.provision_telnyx --execute
+
+# prefer a specific area code
+python -m scripts.provision_telnyx --execute --area-code 415
+```
+
+It prints the `TELNYX_MESSAGING_PROFILE_ID` / `TELNYX_FROM_NUMBER` values to put
+in the environment.
+
+> ⚠️ **Do not reuse `TELNYX_BASE_URL` for SMS.** Telnyx's OpenAI-compatible
+> endpoint also uses that variable name (`.../v2/ai/openai`); picking it up makes
+> every SMS call 404 with "Resource not found". Use `TELNYX_SMS_BASE_URL` if a
+> non-default API root is needed — `TelnyxConfig` prefers it and ignores a
+> `TELNYX_BASE_URL` that points at the AI endpoint.
+
+> ℹ️ Not every country's numbers are SMS-capable on Telnyx. German (+49) numbers,
+> for example, expose voice/fax/local-calling only, with no `sms` feature — the
+> provisioning search filters on the `sms` feature for exactly this reason.
+
 ## API Documentation
 
 All endpoints (except `/health`) require `Authorization: Bearer <SMS_GATEWAY_TOKEN>` header.

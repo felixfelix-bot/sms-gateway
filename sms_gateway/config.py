@@ -6,6 +6,25 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+DEFAULT_TELNYX_API_BASE = "https://api.telnyx.com/v2"
+
+
+def telnyx_base_url() -> str:
+    """Telnyx REST API root for SMS.
+
+    Prefers ``TELNYX_SMS_BASE_URL``. ``TELNYX_BASE_URL`` is honoured only when it
+    looks like the API root: machines that also drive Telnyx's OpenAI-compatible
+    endpoint set it to ``.../v2/ai/openai``, and reusing that value here makes
+    every SMS call fail with a 404 "Resource not found" instead of sending.
+    """
+    explicit = os.getenv("TELNYX_SMS_BASE_URL", "").strip()
+    if explicit:
+        return explicit
+    legacy = os.getenv("TELNYX_BASE_URL", "").strip()
+    if legacy and "/ai/" not in legacy:
+        return legacy
+    return DEFAULT_TELNYX_API_BASE
+
 
 @dataclass
 class TelnyxConfig:
@@ -13,9 +32,7 @@ class TelnyxConfig:
     messaging_profile_id: str = field(
         default_factory=lambda: os.getenv("TELNYX_MESSAGING_PROFILE_ID", "")
     )
-    base_url: str = field(
-        default_factory=lambda: os.getenv("TELNYX_BASE_URL", "https://api.telnyx.com/v2")
-    )
+    base_url: str = field(default_factory=telnyx_base_url)
     from_number: str = field(
         default_factory=lambda: os.getenv("TELNYX_FROM_NUMBER", "")
     )
